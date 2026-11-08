@@ -53,12 +53,12 @@ class Tcpdf extends Pdf
         $fileHandle = parent::prepareForSave($filename);
 
         //  Check for paper size and page orientation
-        $setup = $this->spreadsheet->getSheet($this->getSheetIndex() ?? 0)->getPageSetup();
+        $setup = $this->spreadsheet->getSheet($this->getPageSetupSheetIndex())->getPageSetup();
         $orientation = $this->getOrientation() ?? $setup->getOrientation();
         $orientation = ($orientation === PageSetup::ORIENTATION_LANDSCAPE) ? 'L' : 'P';
         $printPaperSize = $this->getPaperSize() ?? $setup->getPaperSize();
         $paperSize = self::$paperSizes[$printPaperSize] ?? self::$paperSizes[PageSetup::getPaperSizeDefault()] ?? 'LETTER';
-        $printMargins = $this->spreadsheet->getSheet($this->getSheetIndex() ?? 0)->getPageMargins();
+        $printMargins = $this->spreadsheet->getSheet($this->getPageSetupSheetIndex())->getPageMargins();
 
         //  Create PDF
         $pdf = $this->createExternalWriterInstance($orientation, 'pt', $paperSize);

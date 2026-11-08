@@ -13,7 +13,7 @@ Some earlier branches remain supported and security fixes are applied to them; i
 
 ### Added
 
-- Nothing yet.
+- Html and Pdf writers: `setSheetIndex()` accepts a list of worksheet indexes (for example `[0, 2, 4]`) and writes those sheets in that order. A single integer and `writeAllSheets()` are unchanged. PDF page setup follows the first selected sheet.
 
 ### Removed
 
