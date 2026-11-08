@@ -32,7 +32,7 @@ class Mpdf extends Pdf
         $fileHandle = parent::prepareForSave($filename);
 
         //  Check for paper size and page orientation
-        $setup = $this->spreadsheet->getSheet($this->getSheetIndex() ?? 0)->getPageSetup();
+        $setup = $this->spreadsheet->getSheet($this->getPageSetupSheetIndex())->getPageSetup();
         $orientation = $this->getOrientation() ?? $setup->getOrientation();
         $orientation = ($orientation === PageSetup::ORIENTATION_LANDSCAPE) ? 'L' : 'P';
         $printPaperSize = $this->getPaperSize() ?? $setup->getPaperSize();

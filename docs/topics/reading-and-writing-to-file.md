@@ -820,6 +820,23 @@ specify which sheet to write to HTML:
 $writer->setSheetIndex(0);
 ```
 
+#### Write selected worksheets
+
+`setSheetIndex()` also accepts a list of 0-based worksheet indexes.
+Those sheets are written, in the given order, and the others are left
+out. An index that does not exist is rejected when the HTML is
+generated, with the same exception as a single index.
+
+```php
+// First, third and fifth worksheets.
+$writer->setSheetIndex([0, 2, 4]);
+```
+
+Navigation links and print-area CSS use each selected worksheet's own
+index, so they match `id="sheetN"`. A single integer still writes only
+that worksheet, and `writeAllSheets()` still writes every worksheet.
+An empty list writes no worksheets.
+
 #### Setting the images root of the HTML file
 
 There might be situations where you want to explicitly set the included
@@ -1017,6 +1034,20 @@ which sheet to write to PDF:
 ```php
 $writer->setSheetIndex(0);
 ```
+
+#### Write selected worksheets
+
+As with the HTML writer, `setSheetIndex()` accepts a list of 0-based
+worksheet indexes and writes those sheets in that order:
+
+```php
+$writer->setSheetIndex([0, 2, 4]);
+```
+
+Page setup (paper size, orientation and, for Tcpdf, margins) is taken
+from the first selected sheet. `Mpdf`, `Dompdf` and `Tcpdf` all use that
+sheet. A single integer and `writeAllSheets()` behave as before. Tcpdf
+still inserts a page break between sheets when more than one is written.
 
 #### Setting Orientation and PaperSize
 

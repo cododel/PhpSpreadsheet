@@ -67,8 +67,13 @@ class Html extends BaseWriter
 
     /**
      * Sheet index to write.
+     *
+     * Null writes every worksheet. An integer writes that worksheet.
+     * A list of integers writes those worksheets, in the given order.
+     *
+     * @var null|int|list<int>
      */
-    protected ?int $sheetIndex = 0;
+    protected int|array|null $sheetIndex = 0;
 
     /**
      * Images root.
@@ -242,7 +247,15 @@ class Html extends BaseWriter
     {
         $this->rtlSheets = false;
         $this->ltrSheets = false;
-        if ($this->sheetIndex === null) {
+        if (is_array($this->sheetIndex)) {
+            foreach ($this->normalizeSheetIndexes($this->sheetIndex) as $sheetIndex) {
+                if ($this->spreadsheet->getSheet($sheetIndex)->getRightToLeft()) {
+                    $this->rtlSheets = true;
+                } else {
+                    $this->ltrSheets = true;
+                }
+            }
+        } elseif ($this->sheetIndex === null) {
             foreach ($this->spreadsheet->getAllSheets() as $sheet) {
                 if ($sheet->getRightToLeft()) {
                     $this->rtlSheets = true;
@@ -365,8 +378,12 @@ class Html extends BaseWriter
 
     /**
      * Get sheet index.
+     *
+     * Null means every worksheet is written. A list of indexes is written in that order.
+     *
+     * @return null|int|list<int>
      */
-    public function getSheetIndex(): ?int
+    public function getSheetIndex(): int|array|null
     {
         return $this->sheetIndex;
     }
@@ -374,15 +391,60 @@ class Html extends BaseWriter
     /**
      * Set sheet index.
      *
-     * @param int $sheetIndex Sheet index
+     * A single index writes that worksheet. A list of indexes writes those
+     * worksheets, in the given order. An index that does not exist is rejected
+     * when the HTML is generated, with the same exception as a single index.
+     *
+     * @param array<int>|int $sheetIndex Sheet index, or sheet indexes in iteration order
      *
      * @return $this
      */
-    public function setSheetIndex(int $sheetIndex): static
+    public function setSheetIndex(int|array $sheetIndex): static
     {
+        if (is_array($sheetIndex)) {
+            $this->sheetIndex = $this->normalizeSheetIndexes($sheetIndex);
+
+            return $this;
+        }
+
         $this->sheetIndex = $sheetIndex;
 
         return $this;
+    }
+
+    /**
+     * Worksheet index used for PDF page setup.
+     *
+     * A list of sheets uses the first selected sheet. Every sheet, and an
+     * empty list, use the first worksheet.
+     */
+    protected function getPageSetupSheetIndex(): int
+    {
+        if (is_array($this->sheetIndex)) {
+            $indexes = $this->normalizeSheetIndexes($this->sheetIndex);
+
+            return $indexes[0] ?? 0;
+        }
+
+        return $this->sheetIndex ?? 0;
+    }
+
+    /**
+     * @param array<mixed> $sheetIndexes
+     *
+     * @return list<int>
+     */
+    private function normalizeSheetIndexes(array $sheetIndexes): array
+    {
+        $indexes = [];
+        foreach ($sheetIndexes as $index) {
+            if (!is_int($index)) {
+                throw new Exception('Sheet index must be an integer, ' . get_debug_type($index) . ' given');
+            }
+            $indexes[] = $index;
+        }
+
+        return $indexes;
     }
 
     /**
@@ -512,6 +574,14 @@ class Html extends BaseWriter
     private function generateSheetPrep(): array
     {
         // Fetch sheets
+        if (is_array($this->sheetIndex)) {
+            $sheets = [];
+            foreach ($this->normalizeSheetIndexes($this->sheetIndex) as $sheetIndex) {
+                $sheets[] = $this->spreadsheet->getSheet($sheetIndex);
+            }
+
+            return $sheets;
+        }
         if ($this->sheetIndex === null) {
             $sheets = $this->spreadsheet->getAllSheets();
         } else {
@@ -646,7 +716,10 @@ class Html extends BaseWriter
             $html .= $this->generateTableFooter();
             // Writing PDF?
             if ($this instanceof Pdf\Tcpdf && $this->useInlineCss) {
-                if ($this->sheetIndex === null && $sheetId + 1 < $this->spreadsheet->getSheetCount()) {
+                $anotherSheet = is_array($this->sheetIndex)
+                    ? ($sheetId + 1 < count($sheets))
+                    : ($this->sheetIndex === null && $sheetId + 1 < $this->spreadsheet->getSheetCount());
+                if ($anotherSheet) {
                     $html .= '<div style="page-break-before:always" ></div>';
                 }
             }
@@ -666,12 +739,7 @@ class Html extends BaseWriter
     public function generateNavigation(): string
     {
         // Fetch sheets
-        $sheets = [];
-        if ($this->sheetIndex === null) {
-            $sheets = $this->spreadsheet->getAllSheets();
-        } else {
-            $sheets[] = $this->spreadsheet->getSheet($this->sheetIndex);
-        }
+        $sheets = $this->generateSheetPrep();
 
         // Construct HTML
         $html = '';
@@ -684,7 +752,8 @@ class Html extends BaseWriter
             $html .= '<ul class="navigation">' . $this->lineEnding;
 
             foreach ($sheets as $sheet) {
-                $html .= '  <li class="sheet' . $sheetId . '"><a href="#sheet' . $sheetId . '">' . htmlspecialchars($sheet->getTitle()) . '</a></li>' . $this->lineEnding;
+                $anchor = $this->htmlSheetAnchor($sheet, $sheetId);
+                $html .= '  <li class="sheet' . $anchor . '"><a href="#sheet' . $anchor . '">' . htmlspecialchars($sheet->getTitle()) . '</a></li>' . $this->lineEnding;
                 ++$sheetId;
             }
 
@@ -1136,12 +1205,7 @@ class Html extends BaseWriter
         }
 
         // Fetch sheets
-        $sheets = [];
-        if ($this->sheetIndex === null) {
-            $sheets = $this->spreadsheet->getAllSheets();
-        } else {
-            $sheets[] = $this->spreadsheet->getSheet($this->sheetIndex);
-        }
+        $sheets = $this->generateSheetPrep();
 
         // Build styles per sheet
         foreach ($sheets as $sheet) {
@@ -2185,8 +2249,10 @@ class Html extends BaseWriter
         // Identify all cells that should be omitted in HTML due to cell merge.
         // In HTML only the upper-left cell should be written and it should have
         //   appropriate rowspan / colspan attribute
-        $sheetIndexes = $this->sheetIndex !== null
-            ? [$this->sheetIndex] : range(0, $this->spreadsheet->getSheetCount() - 1);
+        $sheetIndexes = is_array($this->sheetIndex)
+            ? $this->normalizeSheetIndexes($this->sheetIndex)
+            : ($this->sheetIndex !== null
+                ? [$this->sheetIndex] : range(0, $this->spreadsheet->getSheetCount() - 1));
 
         foreach ($sheetIndexes as $sheetIndex) {
             $sheet = $this->spreadsheet->getSheet($sheetIndex);
@@ -2264,6 +2330,22 @@ class Html extends BaseWriter
     }
 
     /**
+     * Anchor and @page index for one written worksheet.
+     *
+     * A list of sheets uses the worksheet's own index, so navigation links
+     * match id="sheetN" and print-area CSS matches table.sheetN.
+     * A single index or every sheet keeps the sequential counter.
+     */
+    private function htmlSheetAnchor(Worksheet $worksheet, int $sequentialIndex): int
+    {
+        if (!is_array($this->sheetIndex)) {
+            return $sequentialIndex;
+        }
+
+        return $worksheet->getParentOrThrow()->getIndex($worksheet);
+    }
+
+    /**
      * Generate @page declarations.
      */
     private function generatePageDeclarations(bool $generateSurroundingHTML): string
@@ -2272,12 +2354,7 @@ class Html extends BaseWriter
         $this->calculateSpans();
 
         // Fetch sheets
-        $sheets = [];
-        if ($this->sheetIndex === null) {
-            $sheets = $this->spreadsheet->getAllSheets();
-        } else {
-            $sheets[] = $this->spreadsheet->getSheet($this->sheetIndex);
-        }
+        $sheets = $this->generateSheetPrep();
 
         // Construct HTML
         $htmlPage = $generateSurroundingHTML ? ('<style type="text/css">' . $this->lineEnding) : '';
@@ -2285,7 +2362,8 @@ class Html extends BaseWriter
         // Loop all sheets
         $sheetId = 0;
         foreach ($sheets as $worksheet) {
-            $htmlPage .= "@page page$sheetId { ";
+            $pageIndex = $this->htmlSheetAnchor($worksheet, $sheetId);
+            $htmlPage .= "@page page$pageIndex { ";
             $left = StringHelper::formatNumber($worksheet->getPageMargins()->getLeft()) . 'in; ';
             $htmlPage .= 'margin-left: ' . $left;
             $right = StringHelper::FormatNumber($worksheet->getPageMargins()->getRight()) . 'in; ';
@@ -2302,7 +2380,7 @@ class Html extends BaseWriter
             }
             $htmlPage .= '}' . $this->lineEnding;
             if (!$this->isPdf) {
-                $htmlPage .= $this->printAreaStyles($sheetId, $worksheet);
+                $htmlPage .= $this->printAreaStyles($pageIndex, $worksheet);
             }
             ++$sheetId;
         }
